@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'userID.apps.UseridConfig',
+    'storeapp.apps.StoreappConfig',
     
     # 
     'rest_framework',
