@@ -69,11 +69,28 @@ def paginate_queryset(queryset, request, serializer_class, page_size=20):
 # PRODUCT HELPERS
 # ─────────────────────────────────────────────────────────────────────
 
-def resolve_category(name):
-    """Find a Category by name (case-insensitive). Returns None if not found."""
+def resolve_category(name, parent=None):
+    """
+    Find a Category by name (case-insensitive).
+    If not found, creates it so the product is never saved with null category.
+    Pass parent= for subcategories so they are nested correctly.
+    """
     if not name:
         return None
-    return Category.objects.filter(name__iexact=name).first()
+    # Try to find existing first (exact or case-insensitive match)
+    existing = Category.objects.filter(name__iexact=name, parent=parent).first()
+    if existing:
+        return existing
+    # Create it — slug is derived from name, parent links subcategories
+    import re
+    slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+    # Ensure slug uniqueness
+    base_slug = slug
+    counter = 1
+    while Category.objects.filter(slug=slug).exists():
+        slug = f'{base_slug}-{counter}'
+        counter += 1
+    return Category.objects.create(name=name, slug=slug, parent=parent, is_active=True)
 
 
 def build_delivery_method_label(delivery: dict) -> str:
@@ -105,8 +122,10 @@ def create_product_from_payload(seller, validated_data, media_files, receipt_fil
     condition_map = {'Brand New': 'new', 'Used': 'used', 'Both': 'both', 'new': 'new', 'used': 'used', 'both': 'both'}
 
     # ── Resolve category ─────────────────────────────────────────────
+    # resolve_category uses get_or_create so categories are never silently null.
+    # Subcategory is nested under its parent category.
     category = resolve_category(validated_data.get('category'))
-    subcategory = resolve_category(validated_data.get('subcategory'))
+    subcategory = resolve_category(validated_data.get('subcategory'), parent=category)
 
     # ── Get seller commission rate ────────────────────────────────────
     commission_rate = Decimal(str(seller.commission_rate)) if seller else Decimal('0.0500')
@@ -122,6 +141,13 @@ def create_product_from_payload(seller, validated_data, media_files, receipt_fil
         weight_kg=validated_data.get('weight_kg'),
         stock_count=validated_data.get('quantity', 0),
         seller_price=Decimal(str(validated_data['seller_price'])),
+        # original_price = seller_price + 20% — shown to buyers as the 'before' price.
+        # If the seller provides their own original_price in the payload, use that instead.
+        original_price=(
+            Decimal(str(validated_data['original_price']))
+            if validated_data.get('original_price')
+            else Decimal(str(validated_data['seller_price'])) * Decimal('1.20')
+        ),
         commission_rate=commission_rate,
         delivery_method=build_delivery_method_label(delivery),
         delivery_days=delivery.get('delivery_timeline'),
@@ -454,5 +480,4 @@ def refund_escrow_for_order(order):
     for entry in entries:
         entry.refund()
         
-
 

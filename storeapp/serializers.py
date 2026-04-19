@@ -2,12 +2,7 @@
 
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import (
-    Category, SellerProfile, Product, ProductMedia, ProductReceipt,
-    ProductVariant, Order, OrderItem, SellerWallet, EscrowEntry,
-    WalletTransaction, WithdrawalRequest, Cart, CartItem,
-    ProductReview, SellerReview, Conversation, ChatMessage, Notification,
-)
+from .models import *
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -113,10 +108,10 @@ class ProductListSerializer(serializers.ModelSerializer):
     """Compact serializer for feed/list pages — maps to ProductModel in Flutter."""
     image_url = serializers.SerializerMethodField()
     image_urls = serializers.SerializerMethodField()
-    price = serializers.DecimalField(source='seller_price', max_digits=14, decimal_places=2)
-    original_price = serializers.DecimalField(max_digits=14, decimal_places=2)
+    price = serializers.DecimalField(source='seller_price', max_digits=14, decimal_places=2, coerce_to_string=False)
+    original_price = serializers.DecimalField(max_digits=14, decimal_places=2, coerce_to_string=False)
     seller_id = serializers.CharField(source='seller.id', allow_null=True)
-    stock_count = serializers.IntegerField(source='stock_count', default=0)
+    stock_count = serializers.IntegerField(default=0)
     delivery_days = serializers.CharField()
     is_available = serializers.SerializerMethodField()
     tags = serializers.SerializerMethodField()
@@ -162,19 +157,20 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     """Full detail serializer — used on the product detail page."""
     image_url = serializers.SerializerMethodField()
     image_urls = serializers.SerializerMethodField()
-    price = serializers.DecimalField(source='seller_price', max_digits=14, decimal_places=2)
-    original_price = serializers.DecimalField(max_digits=14, decimal_places=2)
+    price = serializers.DecimalField(source='seller_price', max_digits=14, decimal_places=2, coerce_to_string=False)
+    original_price = serializers.DecimalField(max_digits=14, decimal_places=2, coerce_to_string=False)
     seller_id = serializers.CharField(source='seller.id', allow_null=True)
     seller = SellerPublicSerializer(read_only=True)
     stock_count = serializers.IntegerField()
     is_available = serializers.SerializerMethodField()
     tags = serializers.SerializerMethodField()
+    attributes = serializers.SerializerMethodField()  # ← declared so get_attributes() is used
     category = serializers.CharField(source='category.name', allow_null=True)
     subcategory = serializers.CharField(source='subcategory.name', allow_null=True)
     media = ProductMediaSerializer(many=True, read_only=True)
     variants = ProductVariantSerializer(many=True, read_only=True)
-    commission_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
-    seller_earnings = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    commission_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True, coerce_to_string=False)
+    seller_earnings = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True, coerce_to_string=False)
 
     class Meta:
         model = Product
@@ -218,9 +214,9 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 class SellerProductSerializer(serializers.ModelSerializer):
     """Seller's own view of their product — includes status, admin_note, earnings."""
     image_url = serializers.SerializerMethodField()
-    price = serializers.DecimalField(source='seller_price', max_digits=14, decimal_places=2)
-    commission_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
-    seller_earnings = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    price = serializers.DecimalField(source='seller_price', max_digits=14, decimal_places=2, coerce_to_string=False)
+    commission_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True, coerce_to_string=False)
+    seller_earnings = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True, coerce_to_string=False)
     category_name = serializers.CharField(source='category.name', allow_null=True)
     subcategory_name = serializers.CharField(source='subcategory.name', allow_null=True)
     media = ProductMediaSerializer(many=True, read_only=True)
@@ -284,6 +280,8 @@ class CreateProductSerializer(serializers.Serializer):
 
     # Step 5 — Pricing
     seller_price = serializers.FloatField(min_value=0)
+    # Optional: if provided, overrides the auto-calculated original_price (seller_price + 20%)
+    original_price = serializers.FloatField(required=False, allow_null=True, min_value=0)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -291,9 +289,9 @@ class CreateProductSerializer(serializers.Serializer):
 # ─────────────────────────────────────────────────────────────────────
 
 class OrderItemSerializer(serializers.ModelSerializer):
-    total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
-    commission_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
-    seller_earnings = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True, coerce_to_string=False)
+    commission_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True, coerce_to_string=False)
+    seller_earnings = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True, coerce_to_string=False)
 
     class Meta:
         model = OrderItem
@@ -440,4 +438,112 @@ class NotificationSerializer(serializers.ModelSerializer):
         
 
 
-
+ 
+class BusinessVerificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BusinessVerification
+        fields = [
+            'id', 'status', 'admin_note',
+            'business_name', 'business_state', 'business_address',
+            'business_categories', 'has_ready_stock',
+            'fulfillment_time', 'delivery_method', 'product_condition',
+            'social_media_handle', 'submitted_at',
+        ]
+        read_only_fields = ['id', 'status', 'admin_note', 'submitted_at']
+ 
+ 
+ 
+#  chat serializers
+ 
+class SenderSerializer(serializers.ModelSerializer):
+    """Minimal user info attached to each message."""
+    class Meta:
+        model  = User
+        fields = ['id', 'first_name', 'email']
+ 
+ 
+class ChatMessageSerializer(serializers.ModelSerializer):
+    sender      = SenderSerializer(read_only=True)
+    sender_name = serializers.SerializerMethodField()
+ 
+    class Meta:
+        model  = ChatMessage
+        fields = [
+            'id', 'conversation', 'sender', 'sender_name',
+            'text', 'attachment_url', 'is_read', 'sent_at',
+        ]
+        read_only_fields = ['id', 'sender', 'sender_name', 'is_read', 'sent_at']
+ 
+    def get_sender_name(self, obj):
+        if obj.sender:
+            name = obj.sender.get_full_name().strip()
+            return name if name else obj.sender.email
+        return 'Deleted User'
+ 
+ 
+class ConversationSerializer(serializers.ModelSerializer):
+    """
+    Used for the conversations list screen.
+    Returns enough data to render each row without an extra messages call.
+    """
+    participant_name   = serializers.SerializerMethodField()
+    participant_avatar = serializers.SerializerMethodField()
+    related_product_name = serializers.SerializerMethodField()
+ 
+    class Meta:
+        model  = Conversation
+        fields = [
+            'id', 'participant_name', 'participant_avatar',
+            'participant_type', 'last_message', 'last_message_at',
+            'unread_count', 'related_product_name', 'created_at',
+        ]
+ 
+    def get_participant_name(self, obj):
+        # Return the OTHER person's name from the requesting user's perspective
+        request_user = self.context.get('request').user
+        other = obj.participant if obj.initiator == request_user else obj.initiator
+        name = other.get_full_name().strip()
+        return name if name else other.email
+ 
+    def get_participant_avatar(self, obj):
+        request_user = self.context.get('request').user
+        other = obj.participant if obj.initiator == request_user else obj.initiator
+        # If you have a UserDetails model with profileImage, use it:
+        try:
+            from userID.models import UserDetails
+            profile = UserDetails.objects.get(user=other)
+            if profile.profileImage:
+                request = self.context.get('request')
+                return request.build_absolute_uri(profile.profileImage.url)
+        except Exception:
+            pass
+        return None
+ 
+    def get_related_product_name(self, obj):
+        return obj.related_product.name if obj.related_product else None
+ 
+ 
+class SendMessageSerializer(serializers.Serializer):
+    """
+    Request body for POST /chat/conversations/<id>/messages/
+    Only the sender and text are required; everything else is set server-side.
+    """
+    text           = serializers.CharField(max_length=5000)
+    attachment_url = serializers.URLField(required=False, allow_blank=True)
+ 
+ 
+class StartConversationSerializer(serializers.Serializer):
+    """
+    Request body for POST /chat/conversations/start/
+    Finds or creates a conversation thread then sends the first message.
+    """
+    recipient_id      = serializers.IntegerField(
+        help_text='Django User.id of the person you want to message'
+    )
+    text              = serializers.CharField(max_length=5000)
+    attachment_url    = serializers.URLField(required=False, allow_blank=True)
+    participant_type  = serializers.ChoiceField(
+        choices=['buyer', 'seller', 'admin'], default='buyer'
+    )
+    related_product_id = serializers.UUIDField(required=False, allow_null=True)
+    related_order_id   = serializers.UUIDField(required=False, allow_null=True)

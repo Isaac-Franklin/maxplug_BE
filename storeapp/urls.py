@@ -1,6 +1,8 @@
 # marketplace/urls.py
 
 from django.urls import path
+
+from storeapp import chat_views
 from . import views
 
 urlpatterns = [
@@ -19,10 +21,10 @@ urlpatterns = [
     path('products/explore/', views.explore, name='explore'),
     path('products/search/', views.search_products, name='product-search'),
     path('products/recommended/', views.recommended_products, name='recommended-no-id'),
-    path('products/recommended/<uuid:product_id>/', views.recommended_products, name='recommended'),
-    path('products/<uuid:product_id>/', views.product_detail, name='product-detail'),
-    path('products/<uuid:product_id>/reviews/', views.product_reviews, name='product-reviews'),
-    path('products/<uuid:product_id>/reviews/submit/', views.submit_product_review, name='submit-review'),
+    path('products/recommended/<str:product_id>/', views.recommended_products, name='recommended'),
+    path('products/<str:product_id>/', views.product_detail, name='product-detail'),
+    path('products/<str:product_id>/reviews/', views.product_reviews, name='product-reviews'),
+    path('products/<str:product_id>/reviews/submit/', views.submit_product_review, name='submit-review'),
 
     # ─────────────────────────────────────────────────────────────────
     # SELLERS  (public profile)
@@ -33,7 +35,7 @@ urlpatterns = [
     # CATALOG  (admin-managed product templates)
     # ─────────────────────────────────────────────────────────────────
     path('catalog/products/', views.catalog_products, name='catalog-products'),
-    path('catalog/products/<uuid:product_id>/', views.catalog_product_detail, name='catalog-product-detail'),
+    path('catalog/products/<str:product_id>/', views.catalog_product_detail, name='catalog-product-detail'),
 
     # ─────────────────────────────────────────────────────────────────
     # SELLER — PROFILE & ONBOARDING
@@ -46,8 +48,8 @@ urlpatterns = [
     # SELLER — LISTINGS
     # ─────────────────────────────────────────────────────────────────
     path('seller/listings/', views.seller_listings, name='seller-listings'),
-    path('seller/listings/<uuid:product_id>/', views.seller_listing_detail, name='seller-listing-detail'),
-    path('seller/listings/<uuid:product_id>/media/<uuid:media_id>/', views.delete_product_media, name='delete-product-media'),
+    path('seller/listings/<str:product_id>/', views.seller_listing_detail, name='seller-listing-detail'),
+    path('seller/listings/<str:product_id>/media/<uuid:media_id>/', views.delete_product_media, name='delete-product-media'),
 
     # ─────────────────────────────────────────────────────────────────
     # SELLER — ORDERS
@@ -90,9 +92,28 @@ urlpatterns = [
     # ─────────────────────────────────────────────────────────────────
     path('admin/stats/', views.admin_dashboard_stats, name='admin-stats'),
     path('admin/products/', views.admin_products, name='admin-products'),
-    path('admin/products/<uuid:product_id>/approve/', views.admin_approve_product, name='admin-approve-product'),
-    path('admin/products/<uuid:product_id>/reject/', views.admin_reject_product, name='admin-reject-product'),
-    path('admin/products/<uuid:product_id>/flags/', views.admin_update_product_flags, name='admin-product-flags'),
+    path('admin/products/<str:product_id>/approve/', views.admin_approve_product, name='admin-approve-product'),
+    path('admin/products/<str:product_id>/reject/', views.admin_reject_product, name='admin-reject-product'),
+    path('admin/products/<str:product_id>/flags/', views.admin_update_product_flags, name='admin-product-flags'),
     path('admin/withdrawals/', views.admin_withdrawal_requests, name='admin-withdrawals'),
     path('admin/withdrawals/<uuid:withdrawal_id>/process/', views.admin_process_withdrawal, name='admin-process-withdrawal'),
+    
+    
+    # business verification
+    path('seller/verify-business/',        views.submit_business_verification, name='seller-verify-business'),
+    path('seller/verify-business/status/', views.business_verification_status,  name='seller-verify-business-status'),
+    
+    # GET  → list all conversations for the logged-in user
+    path('conversations/',chat_views.list_conversations,name='chat-list-conversations',),
+ 
+    # POST → start a new conversation (or reuse existing) and send first message
+    path('conversations/start/',chat_views.start_conversation,name='chat-start-conversation',),
+ 
+    # GET  → fetch all messages (marks them read)
+    # POST → send a new message
+    # Both handled by conversation_messages() which dispatches on request.method
+    path('conversations/<uuid:conversation_id>/messages/',chat_views.conversation_messages,name='chat-conversation-messages',),
+ 
+    # DELETE → remove a conversation
+    path('conversations/<uuid:conversation_id>/',chat_views.delete_conversation,name='chat-delete-conversation',),
 ]

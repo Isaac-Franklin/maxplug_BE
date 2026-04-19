@@ -20,5 +20,6 @@ admin.site.register(SellerReview)
 admin.site.register(ChatMessage)
 admin.site.register(Notification)
 admin.site.register(ExternalBalanceSyncLog)
+admin.site.register(BusinessVerification, BusinessVerificationAdminClass)
 
 

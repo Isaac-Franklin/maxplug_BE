@@ -15,13 +15,13 @@ from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
 from .models import (
-    Category, SellerProfile, Product, ProductMedia, ProductReceipt,
+    BusinessVerification, Category, SellerProfile, Product, ProductMedia, ProductReceipt,
     ProductVariant, Order, OrderItem, SellerWallet, EscrowEntry,
     WalletTransaction, WithdrawalRequest, Cart, CartItem as CartItemModel,
     ProductReview, SellerReview, Notification,
 )
 from .serializers import (
-    CategoryTreeSerializer, CategorySerializer,
+    BusinessVerificationSerializer, CategoryTreeSerializer, CategorySerializer,
     SellerProfileSerializer, SellerPublicSerializer,
     ProductListSerializer, ProductDetailSerializer,
     SellerProductSerializer, CreateProductSerializer,
@@ -63,12 +63,12 @@ _pagination_params = [
     openapi.Parameter('page',      openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Page number (default 1)'),
     openapi.Parameter('page_size', openapi.IN_QUERY, type=openapi.TYPE_INTEGER, description='Items per page (default 20)'),
 ]
-# _auth_header = openapi.Parameter(
-#     'Authorization', openapi.IN_HEADER,
-#     description='Bearer <JWT token>',
-#     type=openapi.TYPE_STRING,
-#     required=True,
-# )
+_auth_header = openapi.Parameter(
+    'Authorization', openapi.IN_HEADER,
+    description='Bearer <JWT token>',
+    type=openapi.TYPE_STRING,
+    required=True,
+)
 
 # Reusable multipart listing body (POST /seller/listings/ and POST /admin/products/)
 _listing_post_body = openapi.Schema(
@@ -169,7 +169,6 @@ def category_detail(request, slug):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def hot_deals(request):
-    print('hot_deals called')
     qs = (
         Product.objects
         .filter(status='approved', is_hot_deal=True)
@@ -413,7 +412,7 @@ def product_reviews(request, product_id):
         '**Query params:** `?q=<search>` `?category=<name>`'
     ),
     tags=['Catalog'],
-    manual_parameters= _pagination_params + [
+    manual_parameters=[_auth_header] + _pagination_params + [
         openapi.Parameter('q',        openapi.IN_QUERY, type=openapi.TYPE_STRING),
         openapi.Parameter('category', openapi.IN_QUERY, type=openapi.TYPE_STRING),
     ],
@@ -449,6 +448,7 @@ def catalog_products(request):
         '**Requires authentication.**'
     ),
     tags=['Catalog'],
+    manual_parameters=[_auth_header],
     responses={200: _success, 401: _error_401, 404: _error_404},
 )
 @api_view(['GET'])
@@ -476,6 +476,7 @@ def catalog_product_detail(request, product_id):
         '**Body:** `display_name` (required), `phone`, `bio`, `location`, `state`'
     ),
     tags=['Seller — Profile'],
+    manual_parameters=[_auth_header],
     request_body=SellerProfileSerializer,
     responses={201: _success, 400: _error_400, 401: _error_401},
 )
@@ -502,6 +503,7 @@ def seller_onboard(request):
         'status, commission rate, total sales, and rating.'
     ),
     tags=['Seller — Profile'],
+    manual_parameters=[_auth_header],
     responses={200: _success, 401: _error_401, 403: _error_403, 404: _error_404},
 )
 @swagger_auto_schema(
@@ -514,6 +516,7 @@ def seller_onboard(request):
         '`total_sales`, `total_revenue`, `rating`, `review_count`.'
     ),
     tags=['Seller — Profile'],
+    manual_parameters=[_auth_header],
     request_body=SellerProfileSerializer,
     responses={200: _success, 400: _error_400, 401: _error_401, 403: _error_403},
 )
@@ -523,6 +526,7 @@ def seller_onboard(request):
     operation_summary='Partial update of seller profile',
     operation_description='Partial profile update — only send the fields you want to change.',
     tags=['Seller — Profile'],
+    manual_parameters=[_auth_header],
     request_body=SellerProfileSerializer,
     responses={200: _success, 400: _error_400, 401: _error_401, 403: _error_403},
 )
@@ -554,6 +558,7 @@ def seller_profile(request):
         'commission breakdown. Example: `{ "commission_rate": 0.05 }` = 5%.'
     ),
     tags=['Seller — Profile'],
+    manual_parameters=[_auth_header],
     responses={200: _success, 401: _error_401, 403: _error_403},
 )
 @api_view(['GET'])
@@ -577,7 +582,8 @@ def commission_rate(request):
         'Returns paginated listings owned by the authenticated seller. '
         'Filter by `?status=pending|approved|rejected|draft|archived`.'
     ),
-    tags=['Seller — Listings'] + _pagination_params + [
+    tags=['Seller — Listings'],
+    manual_parameters=[_auth_header] + _pagination_params + [
         openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING,
                           description='pending | approved | rejected | draft | archived'),
     ],
@@ -599,6 +605,7 @@ def commission_rate(request):
         'The seller receives a confirmation notification.'
     ),
     tags=['Seller — Listings'],
+    manual_parameters=[_auth_header],
     request_body=_listing_post_body,
     responses={201: _success, 400: _error_400, 401: _error_401, 403: _error_403, 500: _error_500},
 )
@@ -630,6 +637,7 @@ def seller_listings(request):
 
     ser = CreateProductSerializer(data=payload)
     if not ser.is_valid():
+        print('seller_listings validation errors:', ser.errors)  # dev log
         return error_response('Validation failed.', 400, errors=ser.errors)
 
     media_files = request.FILES.getlist('media[]') or request.FILES.getlist('media')
@@ -661,6 +669,7 @@ def seller_listings(request):
     operation_summary='Get a single seller listing',
     operation_description='Returns full detail of one listing owned by the authenticated seller.',
     tags=['Seller — Listings'],
+    manual_parameters=[_auth_header],
     responses={200: _success, 401: _error_401, 403: _error_403, 404: _error_404},
 )
 @swagger_auto_schema(
@@ -674,6 +683,7 @@ def seller_listings(request):
         'Attach new media via `media[]` files in multipart.'
     ),
     tags=['Seller — Listings'],
+    manual_parameters=[_auth_header],
     request_body=_listing_post_body,
     responses={200: _success, 400: _error_400, 401: _error_401, 403: _error_403, 404: _error_404},
 )
@@ -686,6 +696,7 @@ def seller_listings(request):
         'is `draft` or `rejected`. Re-submits for review on save.'
     ),
     tags=['Seller — Listings'],
+    manual_parameters=[_auth_header],
     request_body=_listing_post_body,
     responses={200: _success, 400: _error_400, 401: _error_401, 403: _error_403, 404: _error_404},
 )
@@ -698,6 +709,7 @@ def seller_listings(request):
         'Draft and rejected listings are permanently deleted.'
     ),
     tags=['Seller — Listings'],
+    manual_parameters=[_auth_header],
     responses={200: _success, 401: _error_401, 403: _error_403, 404: _error_404},
 )
 @api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
@@ -765,6 +777,7 @@ def seller_listing_detail(request, product_id):
         'Use the media `id` from the listing detail response.'
     ),
     tags=['Seller — Listings'],
+    manual_parameters=[_auth_header],
     responses={200: _success, 401: _error_401, 403: _error_403, 404: _error_404},
 )
 @api_view(['DELETE'])
@@ -795,7 +808,7 @@ def delete_product_media(request, product_id, media_id):
         '**Requires Django staff/admin status.**'
     ),
     tags=['Admin'],
-    manual_parameters= _pagination_params + [
+    manual_parameters=[_auth_header] + _pagination_params + [
         openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING),
     ],
     responses={200: _success, 401: _error_401},
@@ -811,6 +824,7 @@ def delete_product_media(request, product_id, media_id):
         '**Requires Django staff/admin status.**'
     ),
     tags=['Admin'],
+    manual_parameters=[_auth_header],
     request_body=_listing_post_body,
     responses={201: _success, 400: _error_400, 401: _error_401},
 )
@@ -874,6 +888,7 @@ def admin_products(request):
         '`is_quick_delivery`, `is_new_arrival` (booleans), `admin_note` (string)'
     ),
     tags=['Admin'],
+    manual_parameters=[_auth_header],
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={
@@ -895,6 +910,7 @@ def admin_approve_product(request, product_id):
         return error_response('Product not found.', 404)
     product.status = 'approved'
     product.approved_at = timezone.now()
+    product.published_by = request.user   # admin who approved this listing
     for flag in ('is_hot_deal', 'is_featured', 'is_quick_delivery', 'is_new_arrival'):
         if flag in request.data:
             setattr(product, flag, request.data[flag])
@@ -923,6 +939,7 @@ def admin_approve_product(request, product_id):
         '**Body:** `reason` (string, required)'
     ),
     tags=['Admin'],
+    manual_parameters=[_auth_header],
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         required=['reason'],
@@ -966,6 +983,7 @@ def admin_reject_product(request, product_id):
         '`is_hot_deal`, `is_featured`, `is_quick_delivery`, `is_new_arrival`'
     ),
     tags=['Admin'],
+    manual_parameters=[_auth_header],
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={
@@ -1007,6 +1025,7 @@ def admin_update_product_flags(request, product_id):
         'Each item includes the confirmed live price.'
     ),
     tags=['Cart'],
+    manual_parameters=[_auth_header],
     responses={200: _success, 401: _error_401},
 )
 @api_view(['GET'])
@@ -1030,6 +1049,7 @@ def cart_detail(request):
         '**Response:** `{ "prices": { "uuid1": 50000.0 } }`'
     ),
     tags=['Cart'],
+    manual_parameters=[_auth_header],
     request_body=ConfirmPricesSerializer,
     responses={200: _success, 400: _error_400, 401: _error_401},
 )
@@ -1057,7 +1077,7 @@ def cart_confirm_prices(request):
         'Each order includes all items, delivery info, and payment status.'
     ),
     tags=['Orders'],
-    manual_parameters= _pagination_params,
+    manual_parameters=[_auth_header] + _pagination_params,
     responses={200: _success, 401: _error_401},
 )
 @swagger_auto_schema(
@@ -1073,6 +1093,7 @@ def cart_confirm_prices(request):
         '`items: [{ product_id, variant_id?, quantity }]`'
     ),
     tags=['Orders'],
+    manual_parameters=[_auth_header],
     request_body=CreateOrderSerializer,
     responses={201: _success, 400: _error_400, 401: _error_401, 500: _error_500},
 )
@@ -1115,6 +1136,7 @@ def orders(request):
         'including all items, price snapshots, delivery info, and tracking number.'
     ),
     tags=['Orders'],
+    manual_parameters=[_auth_header],
     responses={200: _success, 401: _error_401, 404: _error_404},
 )
 @api_view(['GET'])
@@ -1139,6 +1161,7 @@ def order_detail(request, order_id):
         '**Body:** `{ "status": "delivered" | "cancelled" }`'
     ),
     tags=['Orders'],
+    manual_parameters=[_auth_header],
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         required=['status'],
@@ -1184,7 +1207,7 @@ def update_order_status(request, order_id):
         'Filter by `?status=pending|confirmed|processing|shipped|delivered|cancelled`.'
     ),
     tags=['Seller — Orders'],
-    manual_parameters= _pagination_params + [
+    manual_parameters=[_auth_header] + _pagination_params + [
         openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING),
     ],
     responses={200: _success, 401: _error_401, 403: _error_403},
@@ -1215,6 +1238,7 @@ def seller_orders(request):
         '**Body:** `{ "status": "confirmed"|"processing"|"shipped", "tracking_number"?: "..." }`'
     ),
     tags=['Seller — Orders'],
+    manual_parameters=[_auth_header],
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         required=['status'],
@@ -1274,6 +1298,7 @@ def seller_update_order_status(request, order_id):
         '- `external_synced_at` — timestamp of last sync'
     ),
     tags=['Wallet'],
+    manual_parameters=[_auth_header],
     responses={200: _success, 401: _error_401, 403: _error_403},
 )
 @api_view(['GET'])
@@ -1297,6 +1322,7 @@ def wallet_detail(request):
         '**Body (optional):** `{ "auth_token": "<PHP token>" }`'
     ),
     tags=['Wallet'],
+    manual_parameters=[_auth_header],
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         properties={
@@ -1325,7 +1351,7 @@ def wallet_sync(request):
         '`?category=sale|escrow_release|withdrawal|refund|adjustment`'
     ),
     tags=['Wallet'],
-    manual_parameters= _pagination_params + [
+    manual_parameters=[_auth_header] + _pagination_params + [
         openapi.Parameter('type',     openapi.IN_QUERY, type=openapi.TYPE_STRING, description='credit | debit'),
         openapi.Parameter('category', openapi.IN_QUERY, type=openapi.TYPE_STRING,
                           description='sale | escrow_release | withdrawal | refund | adjustment'),
@@ -1360,6 +1386,7 @@ def wallet_transactions(request):
         'Returns 400 if the requested amount exceeds available balance.'
     ),
     tags=['Wallet'],
+    manual_parameters=[_auth_header],
     request_body=WithdrawalRequestSerializer,
     responses={201: _success, 400: _error_400, 401: _error_401, 403: _error_403},
 )
@@ -1405,7 +1432,7 @@ def request_withdrawal(request):
     operation_summary='Get withdrawal request history',
     operation_description='Returns paginated withdrawal requests for the authenticated seller, newest first.',
     tags=['Wallet'],
-    manual_parameters= _pagination_params,
+    manual_parameters=[_auth_header] + _pagination_params,
     responses={200: _success, 401: _error_401, 403: _error_403},
 )
 @api_view(['GET'])
@@ -1434,7 +1461,7 @@ def withdrawal_history(request):
         '**Filter:** `?status=holding|released|refunded`'
     ),
     tags=['Wallet'],
-    manual_parameters= _pagination_params + [
+    manual_parameters=[_auth_header] + _pagination_params + [
         openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING,
                           description='holding | released | refunded'),
     ],
@@ -1468,6 +1495,7 @@ def escrow_entries(request):
         '**Body:** `{ "rating": 1-5, "comment": "..." (optional) }`'
     ),
     tags=['Reviews'],
+    manual_parameters=[_auth_header],
     request_body=ProductReviewSerializer,
     responses={200: _success, 201: _success, 400: _error_400, 401: _error_401, 404: _error_404},
 )
@@ -1519,7 +1547,7 @@ def submit_product_review(request, product_id):
         '**Filter:** `?unread=1` to return only unread notifications.'
     ),
     tags=['Notifications'],
-    manual_parameters= _pagination_params + [
+    manual_parameters=[_auth_header] + _pagination_params + [
         openapi.Parameter('unread', openapi.IN_QUERY, type=openapi.TYPE_INTEGER,
                           description='Pass 1 to return only unread notifications'),
     ],
@@ -1541,6 +1569,7 @@ def notifications_list(request):
     operation_summary='Mark a single notification as read',
     operation_description='Sets `is_read=true` on a single notification belonging to the authenticated user.',
     tags=['Notifications'],
+    manual_parameters=[_auth_header],
     responses={200: _success, 401: _error_401, 404: _error_404},
 )
 @api_view(['PUT'])
@@ -1561,6 +1590,7 @@ def mark_notification_read(request, notification_id):
     operation_summary='Mark all notifications as read',
     operation_description='Sets `is_read=true` on all unread notifications for the authenticated user.',
     tags=['Notifications'],
+    manual_parameters=[_auth_header],
     responses={200: _success, 401: _error_401},
 )
 @api_view(['PUT'])
@@ -1586,6 +1616,7 @@ def mark_all_notifications_read(request):
         '**Requires Django staff/admin status.**'
     ),
     tags=['Admin'],
+    manual_parameters=[_auth_header],
     responses={200: _success, 401: _error_401},
 )
 @api_view(['GET'])
@@ -1616,7 +1647,7 @@ def admin_dashboard_stats(request):
         '**Requires Django staff/admin status.**'
     ),
     tags=['Admin'],
-    manual_parameters= _pagination_params + [
+    manual_parameters=[_auth_header] + _pagination_params + [
         openapi.Parameter('status', openapi.IN_QUERY, type=openapi.TYPE_STRING,
                           description='pending | processing | completed | failed | cancelled'),
     ],
@@ -1644,6 +1675,7 @@ def admin_withdrawal_requests(request):
         '**Requires Django staff/admin status.**'
     ),
     tags=['Admin'],
+    manual_parameters=[_auth_header],
     request_body=openapi.Schema(
         type=openapi.TYPE_OBJECT,
         required=['status'],
@@ -1700,3 +1732,133 @@ def admin_process_withdrawal(request, withdrawal_id):
         )
     return success_response(message=f'Withdrawal {new_status}.')
 
+
+
+
+ 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def submit_business_verification(request):
+    """
+    POST /seller/verify-business/
+    Multipart fields:
+        business_name, business_state, business_address,
+        business_categories (JSON array string),
+        has_ready_stock (true/false), fulfillment_time,
+        delivery_method, product_condition,
+        social_media_handle (optional),
+        cac_document (file), valid_id (file)
+    """
+    data = request.data
+    files = request.FILES
+ 
+    # Validate required text fields
+    required = [
+        'business_name', 'business_state', 'business_address',
+        'fulfillment_time', 'delivery_method', 'product_condition',
+    ]
+    missing = [f for f in required if not data.get(f)]
+    if missing:
+        return error_response(
+            f'Missing required fields: {", ".join(missing)}', 400
+        )
+ 
+    # Parse business_categories JSON array
+    import json
+    raw_cats = data.get('business_categories', '[]')
+    try:
+        categories = json.loads(raw_cats) if isinstance(raw_cats, str) else raw_cats
+        if not categories:
+            return error_response('At least one business category is required.', 400)
+    except (json.JSONDecodeError, TypeError):
+        return error_response('business_categories must be a valid JSON array.', 400)
+ 
+    # Parse has_ready_stock bool
+    has_ready = data.get('has_ready_stock', 'false')
+    if isinstance(has_ready, str):
+        has_ready = has_ready.lower() in ('true', '1', 'yes')
+ 
+    # Upsert — one verification per user, re-submission updates the record
+    verification, created = BusinessVerification.objects.get_or_create(
+        user=request.user
+    )
+ 
+    verification.business_name       = data['business_name']
+    verification.business_state      = data['business_state']
+    verification.business_address    = data['business_address']
+    verification.business_categories = categories
+    verification.has_ready_stock     = has_ready
+    verification.fulfillment_time    = data['fulfillment_time']
+    verification.delivery_method     = data['delivery_method']
+    verification.product_condition   = data['product_condition']
+    verification.social_media_handle = data.get('social_media_handle') or None
+ 
+    # Update documents only if new ones are uploaded
+    if 'cac_document' in files:
+        verification.cac_document = files['cac_document']
+    if 'valid_id' in files:
+        verification.valid_id = files['valid_id']
+ 
+    # Reset to pending if resubmitting after rejection
+    if verification.status == 'rejected':
+        verification.status = 'pending'
+        verification.admin_note = None
+ 
+    verification.save()
+ 
+    # Notify admin
+    from django.contrib.auth.models import User as DjangoUser
+    admins = DjangoUser.objects.filter(is_staff=True)
+    for admin in admins:
+        send_notification(
+            user=admin,
+            notification_type='system',
+            title='New Business Verification',
+            body=f'{request.user.email} submitted a business verification.',
+            data={'verification_id': str(verification.id)},
+        )
+ 
+    return success_response(
+        BusinessVerificationSerializer(verification).data,
+        'Verification submitted successfully. We will review within 24–48 hours.',
+        201 if created else 200,
+    )
+ 
+ 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def business_verification_status(request):
+    """
+    GET /seller/verify-business/status/
+    Returns the user's current verification status.
+    Response:
+        {
+            "submitted": true/false,
+            "status": "pending" | "approved" | "rejected" | null,
+            "admin_note": "..." | null,
+            "submitted_at": "...",
+        }
+    """
+    try:
+        v = BusinessVerification.objects.get(user=request.user)
+        return success_response({
+            'submitted':    True,
+            'status':       v.status,
+            'admin_note':   v.admin_note,
+            'submitted_at': v.submitted_at.isoformat(),
+            'is_approved':  v.is_approved,
+        })
+    except BusinessVerification.DoesNotExist:
+        return success_response({
+            'submitted':   False,
+            'status':      None,
+            'admin_note':  None,
+            'is_approved': False,
+        })
+ 
+ 
+ 
+ 
+ 
+ 

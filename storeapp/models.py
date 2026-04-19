@@ -1,5 +1,5 @@
-# marketplace/models.py
-# Full model file for the MaxPlug marketplace backend
+# storeapp/models.py
+# Full model file for the MaxPlug storeapp backend
 # Covers: Products, Categories, Seller Profiles, Orders,
 #         Wallet/Escrow, Transactions, Reviews, Notifications
 
@@ -146,48 +146,48 @@ class Product(models.Model):
     ]
 
     # Identifiers
-    id              = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    sku             = models.CharField(max_length=60, unique=True, blank=True, null=True,
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    sku = models.CharField(max_length=60, unique=True, blank=True, null=True,
                                        help_text='Auto-generated or manually set SKU')
 
     # Ownership
-    seller          = models.ForeignKey(
+    seller = models.ForeignKey(
         SellerProfile, on_delete=models.CASCADE,
         related_name='products', null=True, blank=True,
         help_text='Null if published directly by admin'
     )
-    published_by    = models.ForeignKey(
+    published_by = models.ForeignKey(
         User, on_delete=models.SET_NULL,
         related_name='admin_published_products',
         null=True, blank=True,
         help_text='Admin user who published the product'
     )
-    source          = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='seller')
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='seller')
 
     # Basic info
-    name            = models.CharField(max_length=255)
-    slug            = models.SlugField(max_length=280, unique=True, blank=True)
-    description     = models.TextField()
-    category        = models.ForeignKey(
+    name = models.CharField(max_length=255)
+    slug = models.SlugField(max_length=280, unique=True, blank=True)
+    description = models.TextField()
+    category = models.ForeignKey(
         Category, on_delete=models.SET_NULL,
         null=True, blank=True, related_name='products'
     )
-    subcategory     = models.ForeignKey(
+    subcategory = models.ForeignKey(
         Category, on_delete=models.SET_NULL,
         null=True, blank=True, related_name='sub_products',
         help_text='Optional second-level category'
     )
-    tags            = models.JSONField(
+    tags = models.JSONField(
         default=list, blank=True,
         help_text='List of tag strings e.g. ["hotDeal","quickDelivery"]'
     )
 
     # Type & condition
-    item_type       = models.CharField(max_length=10, choices=ITEM_TYPE_CHOICES, default='simple')
-    condition       = models.CharField(max_length=10, choices=CONDITION_CHOICES, default='new')
+    item_type = models.CharField(max_length=10, choices=ITEM_TYPE_CHOICES, default='simple')
+    condition = models.CharField(max_length=10, choices=CONDITION_CHOICES, default='new')
 
     # Pricing
-    seller_price    = models.DecimalField(max_digits=14, decimal_places=2)
+    seller_price = models.DecimalField(max_digits=14, decimal_places=2)
     original_price  = models.DecimalField(
         max_digits=14, decimal_places=2,
         null=True, blank=True,
@@ -262,6 +262,11 @@ class Product(models.Model):
     created_at      = models.DateTimeField(auto_now_add=True)
     updated_at      = models.DateTimeField(auto_now=True)
     approved_at     = models.DateTimeField(null=True, blank=True)
+    
+    # attributes
+    attributes = models.JSONField(
+    default=dict, blank=True,
+    help_text='e.g. {"Storage": ["64GB"], "Colors": ["Black"]}')
 
     class Meta:
         ordering = ['-created_at']
@@ -715,7 +720,7 @@ class SellerReview(models.Model):
 
 
 # ─────────────────────────────────────────────────────────────────────
-# CHAT (Marketplace messages)
+# CHAT (storeapp messages)
 # ─────────────────────────────────────────────────────────────────────
 
 class Conversation(models.Model):
@@ -821,5 +826,235 @@ class ExternalBalanceSyncLog(models.Model):
 
     def __str__(self):
         return f'Sync {self.fetched_balance} for {self.user.email} at {self.synced_at}'
+
+
+
+
+class BusinessVerification(models.Model):
+    """
+    Stores business verification submissions from sellers.
+    One record per user — re-submissions update the existing record.
+ 
+    Status flow:
+        pending  → admin reviews documents
+        approved → seller gains 'verified' badge, unlimited listings
+        rejected → seller can resubmit after fixing issues
+    """
+ 
+    STATUS_CHOICES = [
+        ('pending',  'Pending Review'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+ 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='business_verification',
+    )
+ 
+    # ── Business Information ────────────────────────────────────────
+    business_name       = models.CharField(max_length=255)
+    business_state      = models.CharField(max_length=100)
+    business_address    = models.TextField()
+    business_categories = models.JSONField(default=list)  # list of strings
+    has_ready_stock     = models.BooleanField(default=False)
+    fulfillment_time    = models.CharField(max_length=100)
+    delivery_method     = models.CharField(max_length=100)
+    product_condition   = models.CharField(max_length=50)
+    social_media_handle = models.CharField(max_length=255, blank=True, null=True)
+ 
+    # ── Documents ──────────────────────────────────────────────────
+    cac_document = models.FileField(
+        upload_to='verifications/cac/',
+        null=True, blank=True,
+    )
+    valid_id = models.FileField(
+        upload_to='verifications/ids/',
+        null=True, blank=True,
+    )
+ 
+    # ── Status ─────────────────────────────────────────────────────
+    status      = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    admin_note  = models.TextField(blank=True, null=True)  # reason for rejection
+    reviewed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='reviewed_verifications',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    submitted_at = models.DateTimeField(auto_now=True)
+    created_at   = models.DateTimeField(auto_now_add=True)
+ 
+    class Meta:
+        verbose_name = 'Business Verification'
+        verbose_name_plural = 'Business Verifications'
+        ordering = ['-submitted_at']
+ 
+    def __str__(self):
+        return f'{self.user.email} — {self.status}'
+ 
+    @property
+    def is_approved(self):
+        return self.status == 'approved'
+ 
+ 
+from django.contrib import admin
+
+class BusinessVerificationAdminClass(admin.ModelAdmin):
+    list_display  = ['user', 'business_name', 'business_state', 'status', 'submitted_at']
+    list_filter   = ['status', 'business_state']
+    search_fields = ['user__email', 'business_name']
+    readonly_fields = ['id', 'submitted_at', 'created_at']
+    actions = ['approve_verifications', 'reject_verifications']
+ 
+    @admin.action(description='✅ Approve selected verifications')
+    def approve_verifications(self, request, queryset):
+        from django.utils import timezone
+        queryset.update(
+            status='approved',
+            reviewed_by=request.user,
+            reviewed_at=timezone.now(),
+        )
+ 
+    @admin.action(description='❌ Reject selected verifications')
+    def reject_verifications(self, request, queryset):
+        from django.utils import timezone
+        queryset.update(
+            status='rejected',
+            reviewed_by=request.user,
+            reviewed_at=timezone.now(),
+        )
+ 
+
+ 
+ 
+
+ 
+class Conversation(models.Model):
+    """
+    A thread between exactly two participants.
+    Can optionally be tied to a product or order for context.
+ 
+    Rules:
+    - One row per unique (initiator, participant) pair.
+    - Either participant can send messages.
+    - participant_type describes what role the non-initiating user plays
+      so the UI can show the right badge ("Buyer", "Seller", "Admin").
+    """
+    PARTICIPANT_TYPE_CHOICES = [
+        ('buyer',  'Buyer'),
+        ('seller', 'Seller'),
+        ('admin',  'Admin'),
+    ]
+ 
+    id                   = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    initiator            = models.ForeignKey(
+        User, on_delete=models.CASCADE,
+        related_name='initiated_conversations',
+        help_text='User who started the conversation'
+    )
+    participant          = models.ForeignKey(
+        User, on_delete=models.CASCADE,
+        related_name='received_conversations',
+        help_text='The other user in the conversation'
+    )
+    participant_type     = models.CharField(
+        max_length=6, choices=PARTICIPANT_TYPE_CHOICES, default='buyer'
+    )
+ 
+    # Optional context links
+    related_product      = models.ForeignKey(
+        'storeapp.Product', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='conversations'
+    )
+    related_order        = models.ForeignKey(
+        'storeapp.Order', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='conversations'
+    )
+ 
+    # Denormalised for fast list rendering (avoids a subquery on every row)
+    last_message         = models.TextField(blank=True, null=True)
+    last_message_at      = models.DateTimeField(null=True, blank=True)
+ 
+    # Unread count from the *participant's* perspective
+    # (initiator's unread is tracked on ChatMessage.is_read)
+    unread_count         = models.PositiveIntegerField(default=0)
+ 
+    created_at           = models.DateTimeField(auto_now_add=True)
+ 
+    class Meta:
+        # Prevent duplicate threads between the same two people
+        unique_together = ('initiator', 'participant')
+        ordering = ['-last_message_at']
+ 
+    def __str__(self):
+        return (
+            f'Conv #{str(self.id)[:8]} | '
+            f'{self.initiator.email} ↔ {self.participant.email}'
+        )
+ 
+    @classmethod
+    def get_or_create_between(cls, user_a: User, user_b: User,
+                               participant_type: str = 'buyer',
+                               related_product=None,
+                               related_order=None):
+        """
+        Find an existing conversation between user_a and user_b
+        (regardless of who initiated), or create one.
+        Returns (conversation, created).
+        """
+        conv = (
+            cls.objects.filter(initiator=user_a, participant=user_b).first()
+            or cls.objects.filter(initiator=user_b, participant=user_a).first()
+        )
+        if conv:
+            return conv, False
+ 
+        conv = cls.objects.create(
+            initiator=user_a,
+            participant=user_b,
+            participant_type=participant_type,
+            related_product=related_product,
+            related_order=related_order,
+        )
+        return conv, True
+ 
+ 
+class ChatMessage(models.Model):
+    """
+    A single message inside a Conversation.
+    FK to Conversation — one conversation has many messages.
+    """
+    id              = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    conversation    = models.ForeignKey(
+        Conversation, on_delete=models.CASCADE,
+        related_name='messages'
+    )
+    sender          = models.ForeignKey(
+        User, on_delete=models.SET_NULL,
+        null=True, related_name='sent_messages'
+    )
+    text            = models.TextField()
+    attachment_url  = models.URLField(blank=True, null=True,
+                                      help_text='Optional image/file URL')
+    is_read         = models.BooleanField(default=False)
+    sent_at         = models.DateTimeField(auto_now_add=True)
+ 
+    class Meta:
+        ordering = ['sent_at']
+ 
+    def __str__(self):
+        sender_email = self.sender.email if self.sender else 'Deleted User'
+        return f'[{sender_email}] {self.text[:60]}'
+ 
+    def mark_read(self):
+        if not self.is_read:
+            self.is_read = True
+            self.save(update_fields=['is_read'])
+ 
+ 
 
 
