@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
 
-from .models import Conversation, ChatMessage
+from .models import Conversation, ChatMessage, SellerProfile
 from .serializers import (
     ConversationSerializer,
     ChatMessageSerializer,
@@ -111,6 +111,8 @@ def list_conversations(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def start_conversation(request):
+    print('start_conversation CALLED')
+    print(request.data)
     """
     Find or create a 1-to-1 conversation with `recipient_id`,
     then immediately post the first message.
@@ -127,9 +129,12 @@ def start_conversation(request):
     data = serializer.validated_data
 
     # Fetch recipient
+    print('Looking up recipient:', data['recipient_id'])
+    print('User exists:', User.objects.filter(pk=data['recipient_id']).exists())
+    print('SellerProfile exists:', SellerProfile.objects.filter(pk=data['recipient_id']).exists())
     try:
-        recipient = User.objects.get(pk=data['recipient_id'])
-    except User.DoesNotExist:
+        recipient = SellerProfile.objects.get(pk=data['recipient_id']).user
+    except SellerProfile.DoesNotExist:
         return Response({
             'status': status.HTTP_404_NOT_FOUND,
             'message': 'Recipient not found.',
@@ -203,44 +208,10 @@ def start_conversation(request):
 # Returns all messages in a conversation (marks unread as read).
 # ─────────────────────────────────────────────────────────────────────
 
-@swagger_auto_schema(
-    method='GET',
-    tags=['chat'],
-    operation_summary='Get all messages in a conversation',
-    manual_parameters=[
-        openapi.Parameter(
-            'conversation_id', openapi.IN_PATH,
-            description='UUID of the conversation',
-            type=openapi.TYPE_STRING,
-        ),
-    ],
-    responses={
-        200: openapi.Response(
-            description='List of messages',
-            examples={
-                'application/json': {
-                    'status': 200,
-                    'message': 'Messages fetched.',
-                    'data': [
-                        {
-                            'id': 'uuid',
-                            'sender': {'id': 1, 'first_name': 'Jane', 'email': 'j@x.com'},
-                            'sender_name': 'Jane',
-                            'text': 'Hello!',
-                            'attachment_url': None,
-                            'is_read': True,
-                            'sent_at': '2024-01-01T10:00:00Z',
-                        }
-                    ],
-                }
-            },
-        ),
-        403: 'Not a participant in this conversation',
-        404: 'Conversation not found',
-    },
-)
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
+# ─────────────────────────────────────────────────────────────────────
+# Internal helper — no @api_view, no @permission_classes
+# ─────────────────────────────────────────────────────────────────────
+
 def get_messages(request, conversation_id):
     """
     Fetch all messages for a conversation.
@@ -256,7 +227,6 @@ def get_messages(request, conversation_id):
             'message': 'Conversation not found.',
         }, status=status.HTTP_404_NOT_FOUND)
 
-    # Permission check — must be a participant
     if request.user not in (conversation.initiator, conversation.participant):
         return Response({
             'status': status.HTTP_403_FORBIDDEN,
@@ -265,11 +235,9 @@ def get_messages(request, conversation_id):
 
     messages = conversation.messages.select_related('sender').all()
 
-    # Mark unread messages from the OTHER user as read
     unread_qs = messages.filter(is_read=False).exclude(sender=request.user)
     if unread_qs.exists():
         unread_qs.update(is_read=True)
-        # Reset unread counter
         conversation.unread_count = 0
         conversation.save(update_fields=['unread_count'])
 
@@ -285,44 +253,9 @@ def get_messages(request, conversation_id):
 
 
 # ─────────────────────────────────────────────────────────────────────
-# POST /chat/conversations/<conversation_id>/messages/
-# Send a message in an existing conversation.
+# Internal helper — no @api_view, no @permission_classes
 # ─────────────────────────────────────────────────────────────────────
 
-@swagger_auto_schema(
-    method='POST',
-    tags=['chat'],
-    operation_summary='Send a message in an existing conversation',
-    request_body=SendMessageSerializer,
-    manual_parameters=[
-        openapi.Parameter(
-            'conversation_id', openapi.IN_PATH,
-            description='UUID of the conversation',
-            type=openapi.TYPE_STRING,
-        ),
-    ],
-    responses={
-        201: openapi.Response(
-            description='Message sent',
-            examples={
-                'application/json': {
-                    'status': 201,
-                    'message': 'Message sent.',
-                    'data': {
-                        'id': 'uuid',
-                        'text': 'Yes, still available!',
-                        'sent_at': '2024-01-01T10:05:00Z',
-                    },
-                }
-            },
-        ),
-        400: 'Validation error',
-        403: 'Not a participant',
-        404: 'Conversation not found',
-    },
-)
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
 def send_message(request, conversation_id):
     """
     Send a message inside an existing conversation thread.
@@ -360,7 +293,6 @@ def send_message(request, conversation_id):
 
         conversation.last_message    = message.text
         conversation.last_message_at = message.sent_at
-        # Increment unread for the OTHER person
         conversation.unread_count = (
             Conversation.objects.filter(pk=conversation.pk)
             .values_list('unread_count', flat=True)
@@ -450,3 +382,4 @@ def conversation_messages(request, conversation_id):
     if request.method == 'GET':
         return get_messages(request, conversation_id)
     return send_message(request, conversation_id)
+

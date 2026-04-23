@@ -12,7 +12,7 @@ from django.utils import timezone
 
 # ─────────────────────────────────────────────────────────────────────
 # HELPERS
-# ─────────────────────────────────────────────────────────────────────
+# ─────────────────────`────────────────────────────────────────────────
 
 def product_image_upload_path(instance, filename):
     return f'products/{instance.product.id}/images/{filename}'

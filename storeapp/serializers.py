@@ -533,11 +533,7 @@ class SendMessageSerializer(serializers.Serializer):
  
  
 class StartConversationSerializer(serializers.Serializer):
-    """
-    Request body for POST /chat/conversations/start/
-    Finds or creates a conversation thread then sends the first message.
-    """
-    recipient_id      = serializers.IntegerField(
+    recipient_id = serializers.UUIDField(
         help_text='Django User.id of the person you want to message'
     )
     text              = serializers.CharField(max_length=5000)
@@ -547,3 +543,5 @@ class StartConversationSerializer(serializers.Serializer):
     )
     related_product_id = serializers.UUIDField(required=False, allow_null=True)
     related_order_id   = serializers.UUIDField(required=False, allow_null=True)
+
+
